@@ -206,9 +206,10 @@ class InformixGrammar extends Grammar
      *
      * @param  Blueprint  $blueprint
      * @param  Fluent  $command
+     * @param  Connection|null  $connection
      * @return string
      */
-    public function compileRenameColumn(Blueprint $blueprint, Fluent $command): string
+    public function compileRenameColumn(Blueprint $blueprint, Fluent $command, ?Connection $connection = null): string
     {
         return sprintf(
             'RENAME COLUMN %s.%s TO %s',
