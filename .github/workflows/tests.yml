@@ -14,17 +14,20 @@ jobs:
           - php: '8.2'
             laravel: '^11.0'
             testbench: '^9.0'
+            advisory_block: '0'
           - php: '8.2'
             laravel: '^12.0'
             testbench: '^10.0'
+            advisory_block: '1'
           - php: '8.3'
             laravel: '^13.0'
             testbench: '^11.0'
+            advisory_block: '1'
 
     name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -36,5 +39,9 @@ jobs:
       - run: composer require --dev --no-update "orchestra/testbench:${{ matrix.testbench }}"
 
       - run: composer update --prefer-dist --no-interaction --no-progress
+        env:
+          # Laravel 11 is retained as a compatibility target even though its
+          # available releases now have published security advisories.
+          COMPOSER_POLICY_ADVISORIES_BLOCK: ${{ matrix.advisory_block }}
 
       - run: composer test
