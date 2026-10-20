@@ -36,7 +36,8 @@
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit --exclude-group integration",
+        "test:integration": "phpunit --group integration --fail-on-skipped --do-not-cache-result"
     },
     "minimum-stability": "stable",
     "prefer-stable": true

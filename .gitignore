@@ -1,3 +1,5 @@
 /vendor/
 /composer.lock
 /.phpunit.cache/
+/.env.integration
+/test-results/

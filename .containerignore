@@ -1,0 +1,8 @@
+.git
+vendor
+composer.lock
+.phpunit.cache
+.env*
+test-results
+*.tar
+*.tgz

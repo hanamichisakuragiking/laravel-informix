@@ -1,0 +1,87 @@
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/php-83:latest
+FROM ${BASE_IMAGE} AS builder
+USER 0
+
+RUN dnf -y update && \
+    dnf -y install php-devel gcc gcc-c++ make autoconf libtool \
+        libaio libnsl bc fontconfig dejavu-sans-fonts tar gzip unzip && \
+    dnf clean all
+
+ENV INFORMIXDIR=/opt/informix \
+    LD_LIBRARY_PATH=/opt/informix/lib:/opt/informix/lib/cli:/opt/informix/lib/esql
+
+# The licensed IBM archive is supplied separately, outside the build context.
+# Explicit acceptance is required from the person building the image.
+ARG ACCEPT_CSDK_LICENSE=false
+RUN --mount=type=secret,id=csdk \
+    test "$ACCEPT_CSDK_LICENSE" = true && \
+    test "$(uname -m)" = x86_64 && \
+    mkdir -p /tmp/csdk && \
+    tar -xf /run/secrets/csdk -C /tmp/csdk && \
+    cd /tmp/csdk && \
+    ./installclientsdk -i silent -DLICENSE_ACCEPTED=TRUE \
+        -DUSER_INSTALL_DIR=/opt/informix && \
+    test -f /opt/informix/incl/cli/infxcli.h && \
+    test -d /opt/informix/lib/cli && \
+    rm -rf /tmp/csdk
+
+ARG PDO_INFORMIX_VERSION=1.3.7
+RUN curl --fail --location --retry 3 \
+        "https://pecl.php.net/get/PDO_INFORMIX-${PDO_INFORMIX_VERSION}.tgz" \
+        -o /tmp/pdo_informix.tgz && \
+    mkdir /tmp/pdo_informix && \
+    tar -xzf /tmp/pdo_informix.tgz -C /tmp/pdo_informix --strip-components=1 && \
+    cd /tmp/pdo_informix && \
+    phpize && \
+    ./configure --with-pdo-informix=/opt/informix && \
+    make -j2 && make install && \
+    cp modules/pdo_informix.so /tmp/pdo_informix.so && \
+    printf 'extension=pdo_informix.so\n' > /etc/php.d/40-pdo_informix.ini && \
+    php --ri pdo_informix
+
+# Verify Composer's installer against the official published checksum.
+RUN curl --fail --location https://getcomposer.org/installer -o /tmp/composer-setup.php && \
+    curl --fail --location https://composer.github.io/installer.sig -o /tmp/composer-setup.sig && \
+    php -r 'if (trim(file_get_contents("/tmp/composer-setup.sig")) !== hash_file("sha384", "/tmp/composer-setup.php")) { exit(1); }' && \
+    php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+
+WORKDIR /opt/app-root/src
+COPY composer.json phpunit.xml.dist ./
+COPY src/ ./src/
+COPY config/ ./config/
+COPY tests/ ./tests/
+
+# Resolve Laravel 13 inside the image, irrespective of the developer's local PHP.
+RUN php -r '$p=json_decode(file_get_contents("composer.json"), true, 512, JSON_THROW_ON_ERROR); $p["require"]["illuminate/database"]="^13.0"; $p["require"]["illuminate/support"]="^13.0"; $p["require-dev"]["orchestra/testbench"]="^11.0"; file_put_contents("composer.json", json_encode($p, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));' && \
+    COMPOSER_ALLOW_SUPERUSER=1 composer update --prefer-dist --no-interaction \
+        --no-progress --no-plugins --no-scripts && \
+    php vendor/bin/phpunit --exclude-group integration --do-not-cache-result
+
+FROM ${BASE_IMAGE} AS runner
+USER 0
+RUN dnf -y update && dnf -y install libaio libnsl && dnf clean all
+
+ENV INFORMIXDIR=/opt/informix \
+    LD_LIBRARY_PATH=/opt/informix/lib:/opt/informix/lib/cli:/opt/informix/lib/esql \
+    HOME=/tmp \
+    TMPDIR=/tmp \
+    APP_SERVICES_CACHE=/tmp/ifxt-services.php \
+    APP_PACKAGES_CACHE=/tmp/ifxt-packages.php \
+    APP_CONFIG_CACHE=/tmp/ifxt-config.php \
+    APP_ROUTES_CACHE=/tmp/ifxt-routes.php \
+    APP_EVENTS_CACHE=/tmp/ifxt-events.php
+
+COPY --from=builder /opt/informix/ /opt/informix/
+COPY --from=builder /tmp/pdo_informix.so /tmp/pdo_informix.so
+RUN cp /tmp/pdo_informix.so "$(php-config --extension-dir 2>/dev/null || php -r 'echo ini_get("extension_dir");')/pdo_informix.so" && \
+    rm /tmp/pdo_informix.so && \
+    printf 'extension=pdo_informix.so\n' > /etc/php.d/40-pdo_informix.ini && \
+    find /opt/informix -type f -perm /6000 -exec chmod a-s {} + && \
+    chmod -R a+rX /opt/informix && \
+    php --ri pdo_informix
+
+WORKDIR /opt/app-root/src
+COPY --from=builder --chown=1001:0 /opt/app-root/src/ ./
+USER 1001
+ENTRYPOINT ["php", "vendor/bin/phpunit", "--do-not-cache-result"]
+CMD ["--group", "integration", "--fail-on-skipped", "--testdox"]
