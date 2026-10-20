@@ -109,6 +109,13 @@ Red Hat's registry/repositories, PECL, Composer, and Composer package sources.
 The CSDK 4.50.FC8 / UBI 9 combination must still be validated on your host;
 these files have not been built remotely.
 
+FC8 also requires ncurses ABI 5. A separate Red Hat UBI 8.10 stage installs
+`ncurses-compat-libs` and supplies the genuine `libncurses.so.5` and
+`libtinfo.so.5` libraries under `/opt/ncurses5/lib` in both UBI 9 stages.
+An `ld.so.conf.d` entry registers this location. UBI 9's ABI 6 libraries and
+RPM packages are retained. This is a custom compatibility setup to validate,
+not a claim of Red Hat or IBM certification of FC8 on UBI 9.
+
 ## 4. Configure the connection locally on the host
 
 ```bash
@@ -169,6 +176,10 @@ podman run --rm --read-only \
 
 ## Troubleshooting
 
+- Prerequisite verification requires `libncurses.so.5`: use the updated
+  Containerfile with its UBI 8 compatibility-library stage. UBI 9's
+  `ncurses-libs` package alone provides ABI 6. Both the builder and runner need
+  the ABI 5 libraries; copying only the installed CSDK is insufficient.
 - `Error loading nativeAPI` followed by `libcrypt.so.1: cannot open shared
   object file`: UBI 9 needs `libxcrypt-compat` for this older library ABI.
   `libxcrypt` alone does not provide it. Both image stages explicitly install
@@ -185,8 +196,8 @@ podman run --rm --read-only \
   The image includes `file` for installer architecture/library detection plus
   explicit native-library dependencies. If the log specifically requires
   `libncurses.so.5`, `ncurses-libs` supplies ABI 6 and is not an ABI 5 replacement;
-  use a supported compatibility package from approved repositories or a compatible
-  CSDK version. Do not symlink ABI 6 to ABI 5 or suppress prerequisite checks.
+  the updated Containerfile supplies actual ABI 5 compatibility libraries from
+  Red Hat UBI 8. Do not suppress prerequisite checks.
 - Connection refused or timeout: check `podman port "$IFX_CONTAINER"`, the
   Informix listener, and host firewall rules for 9088. If the port is published
   only on host loopback, the runner's bridge cannot reach it through the LAN IP.
@@ -210,6 +221,7 @@ podman run --rm --read-only \
 
 - [Red Hat UBI PHP 8.3 image](https://catalog.redhat.com/en/software/containers/ubi9/php-83/673b346e1e5aff63c234f637)
 - [PECL PDO_INFORMIX releases](https://pecl.php.net/package/pdo_informix)
+- [Red Hat UBI 8 compatibility-library package](https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi8/8/x86_64/baseos/os/Packages/n/)
 - [Podman build secrets](https://docs.podman.io/en/latest/markdown/podman-build.1.html)
 - [Informix database locales](https://www.ibm.com/docs/en/informix-servers/15.0.x?topic=database-use-create)
 - [Informix sysdbslocale table](https://www.ibm.com/docs/sl/SSGU8G_12.1.0/com.ibm.adref.doc/ids_adr_0222.htm)

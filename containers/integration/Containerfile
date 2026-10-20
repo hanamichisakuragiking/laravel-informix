@@ -1,4 +1,13 @@
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9/php-83:latest
+
+# FC8 requires ncurses ABI 5. Obtain the actual compatibility libraries from
+# Red Hat UBI 8; do not alias UBI 9's ABI 6 libraries or replace its RPMs.
+FROM registry.access.redhat.com/ubi8/ubi:8.10 AS ncurses5
+RUN dnf -y update && dnf -y install ncurses-compat-libs && \
+    mkdir -p /opt/ncurses5/lib && \
+    cp -a /usr/lib64/libncurses.so.5* /usr/lib64/libtinfo.so.5* /opt/ncurses5/lib/ && \
+    dnf clean all
+
 FROM ${BASE_IMAGE} AS builder
 USER 0
 
@@ -8,6 +17,13 @@ RUN dnf -y update && \
         file elfutils-libelf pam libxcrypt libxcrypt-compat libstdc++ libgcc ncurses-libs && \
     test -r /usr/lib64/libcrypt.so.1 && \
     dnf clean all
+
+COPY --from=ncurses5 /opt/ncurses5/ /opt/ncurses5/
+RUN printf '/opt/ncurses5/lib\n' > /etc/ld.so.conf.d/informix-ncurses5.conf && \
+    ldconfig && \
+    test -r /opt/ncurses5/lib/libncurses.so.5 && \
+    test -r /opt/ncurses5/lib/libtinfo.so.5 && \
+    ldd /opt/ncurses5/lib/libncurses.so.5
 
 ENV INFORMIXDIR=/opt/informix \
     LD_LIBRARY_PATH=/opt/informix/lib:/opt/informix/lib/cli:/opt/informix/lib/esql
@@ -57,6 +73,12 @@ RUN dnf -y update && \
     dnf -y install libaio libnsl elfutils-libelf pam libxcrypt libxcrypt-compat libstdc++ libgcc ncurses-libs && \
     test -r /usr/lib64/libcrypt.so.1 && \
     dnf clean all
+
+COPY --from=ncurses5 /opt/ncurses5/ /opt/ncurses5/
+RUN printf '/opt/ncurses5/lib\n' > /etc/ld.so.conf.d/informix-ncurses5.conf && \
+    ldconfig && \
+    test -r /opt/ncurses5/lib/libncurses.so.5 && \
+    test -r /opt/ncurses5/lib/libtinfo.so.5
 
 ENV INFORMIXDIR=/opt/informix \
     LD_LIBRARY_PATH=/opt/informix/lib:/opt/informix/lib/cli:/opt/informix/lib/esql \
