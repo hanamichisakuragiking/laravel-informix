@@ -169,6 +169,12 @@ podman run --rm --read-only \
 
 ## Troubleshooting
 
+- `Error loading nativeAPI` followed by `libcrypt.so.1: cannot open shared
+  object file`: UBI 9 needs `libxcrypt-compat` for this older library ABI.
+  `libxcrypt` alone does not provide it. Both image stages explicitly install
+  `libxcrypt-compat` and verify `/usr/lib64/libcrypt.so.1` exists. Copy the updated
+  Containerfile to the build host and rebuild; the changed package-install layer
+  invalidates the dependent cache automatically.
 - CSDK build step exits with status 45: this final status alone does not identify
   the missing prerequisite or installer failure. The revised installer step
   prints launcher output, installer/debug log tails, and the library inventory

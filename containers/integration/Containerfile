@@ -5,7 +5,8 @@ USER 0
 RUN dnf -y update && \
     dnf -y install php-devel gcc gcc-c++ make autoconf libtool \
         libaio libnsl bc fontconfig dejavu-sans-fonts tar gzip unzip \
-        file elfutils-libelf pam libxcrypt libstdc++ libgcc ncurses-libs && \
+        file elfutils-libelf pam libxcrypt libxcrypt-compat libstdc++ libgcc ncurses-libs && \
+    test -r /usr/lib64/libcrypt.so.1 && \
     dnf clean all
 
 ENV INFORMIXDIR=/opt/informix \
@@ -53,7 +54,8 @@ RUN php -r '$p=json_decode(file_get_contents("composer.json"), true, 512, JSON_T
 FROM ${BASE_IMAGE} AS runner
 USER 0
 RUN dnf -y update && \
-    dnf -y install libaio libnsl elfutils-libelf pam libxcrypt libstdc++ libgcc ncurses-libs && \
+    dnf -y install libaio libnsl elfutils-libelf pam libxcrypt libxcrypt-compat libstdc++ libgcc ncurses-libs && \
+    test -r /usr/lib64/libcrypt.so.1 && \
     dnf clean all
 
 ENV INFORMIXDIR=/opt/informix \
