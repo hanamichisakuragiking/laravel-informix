@@ -1,11 +1,11 @@
 # Laravel Informix
 
-A Laravel 12+ database driver for IBM Informix.
+A database driver that adds IBM Informix support to Laravel 11, 12, and 13.
 
 ## Requirements
 
-- PHP 8.2+
-- Laravel 11.x or 12.x
+- PHP 8.2+ for Laravel 11 and 12; PHP 8.3+ for Laravel 13
+- Laravel 11.x, 12.x, or 13.x
 - PDO_INFORMIX extension
 - IBM Informix Client SDK (CSDK)
 
@@ -295,7 +295,29 @@ When testing this driver, ensure you test with data containing:
 - Backslashes: `C:\path\to\file`
 - Null bytes: Binary data
 
+## Development and Testing
+
+Install the development dependencies and run the unit tests:
+
+```bash
+composer install
+composer test
+```
+
+The unit tests do not require an Informix server. They cover SQL generation,
+binding conversion, and compatibility with Laravel's database API. A real
+Informix integration test still requires PDO_INFORMIX, the Informix Client SDK,
+and connection settings for a test database.
+
+GitHub Actions tests the package against Laravel 11, 12, and 13. Laravel 13
+jobs use PHP 8.3 because that is Laravel 13's minimum PHP version.
+
 ## Changelog
+
+### v1.3.0
+- Added Laravel 13 support
+- Added Laravel 13's optional select fetch arguments
+- Added unit tests and a Laravel 11/12/13 GitHub Actions matrix
 
 ### v1.2.0
 - Fixed single quote escaping (use SQL standard `''` instead of `\'`)

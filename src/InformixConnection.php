@@ -98,11 +98,12 @@ class InformixConnection extends Connection
      * @param  string  $query
      * @param  array  $bindings
      * @param  bool  $useReadPdo
+     * @param  array  $fetchUsing
      * @return array
      */
-    public function select($query, $bindings = [], $useReadPdo = true): array
+    public function select($query, $bindings = [], $useReadPdo = true, array $fetchUsing = []): array
     {
-        return $this->run($query, $bindings, function ($query, $bindings) use ($useReadPdo) {
+        return $this->run($query, $bindings, function ($query, $bindings) use ($useReadPdo, $fetchUsing) {
             if ($this->pretending()) {
                 return [];
             }
@@ -113,7 +114,9 @@ class InformixConnection extends Connection
             $pdo = $useReadPdo ? $this->getReadPdo() : $this->getPdo();
             $statement = $pdo->query($preparedQuery);
             
-            return $statement->fetchAll(PDO::FETCH_OBJ);
+            return $fetchUsing === []
+                ? $statement->fetchAll(PDO::FETCH_OBJ)
+                : $statement->fetchAll(...$fetchUsing);
         });
     }
 
