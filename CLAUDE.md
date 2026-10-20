@@ -1,8 +1,14 @@
 # Laravel Informix Connector - Development Guide
 
+Read [AGENTS.md](AGENTS.md) first for current repository instructions and test
+boundaries. Use [the Podman runbook](docs/PODMAN_INTEGRATION.md) for the verified
+Laravel 13 integration setup. The application commands and results later in
+this document are historical; do not treat them as current test instructions.
+
 ## Project Overview
 
-This package provides Laravel 12 database driver support for IBM Informix IDS databases using PDO_INFORMIX.
+This package provides Laravel 11, 12, and 13 database driver support for IBM
+Informix using PDO_INFORMIX. Laravel 13 requires PHP 8.3+.
 
 **Repository:** https://github.com/hanamichisakuragiking/laravel-informix
 
@@ -34,7 +40,7 @@ src/
 
 ```php
 // In InformixConnection.php
-public function select($query, $bindings = [], $useReadPdo = true): array
+public function select($query, $bindings = [], $useReadPdo = true, array $fetchUsing = []): array
 {
     // Manual binding instead of prepare() due to PDO_INFORMIX bug
     $preparedQuery = $this->bindValuesIntoQuery($query, $this->prepareBindings($bindings));
@@ -48,6 +54,9 @@ public function select($query, $bindings = [], $useReadPdo = true): array
 **Problem:** `PDO::lastInsertId()` always returns 0 for PDO_INFORMIX.
 
 **Workaround:** Query `MAX(id)` from the table after insert.
+
+This existing workaround can return another client's ID during concurrent
+inserts. Passing the current integration tests does not establish concurrency safety.
 
 ```php
 // In InformixProcessor.php
@@ -151,7 +160,7 @@ return [
 ### Required Components
 
 - **Informix CSDK 4.50.FC8** (Client SDK)
-- **PDO_INFORMIX 1.3.6** (PHP extension)
+- **PDO_INFORMIX 1.3.7** in the current integration runner (1.3.6 in historical notes)
 - **PHP 8.3** with php-devel for compilation
 - **Informix IDS 14.10** (Server)
 
@@ -195,14 +204,22 @@ server_name  onsoctcp  hostname  port_or_service
 
 ### Locale Configuration
 
-**CRITICAL:** DB_LOCALE and CLIENT_LOCALE must match the database's locale setting exactly, or you'll get error -23197 (locale mismatch).
+Set DB_LOCALE to the database's stored locale. The verified test database
+`laravel_ifx_test` uses `en_US.819`, and the passing runner used `en_US.819` for
+both DB_LOCALE and CLIENT_LOCALE. Client locales can differ when conversion is
+configured; do not assume every Informix database uses the same locale.
 
 Check database locale:
 ```sql
-SELECT name, dbs_collate FROM sysmaster:sysdatabases WHERE name = 'your_db'
+SELECT dbs_dbsname, dbs_collate FROM sysmaster:sysdbslocale
+WHERE dbs_dbsname = 'your_db';
 ```
 
 ## Testing Commands
+
+Run `composer test` at the package root. Follow the Podman runbook for database
+integration. The following Artisan examples require a consuming Laravel app;
+they are not commands available from this package root.
 
 ```bash
 # Test connection
@@ -214,16 +231,11 @@ php artisan db:table users --database=informix
 # Run migrations
 php artisan migrate --database=informix
 
-# Fresh migration
-php artisan migrate:fresh --database=informix
-
 # Migration status
 php artisan migrate:status --database=informix
 
-# Rollback/Reset
+# Rollback a migration in an explicitly scoped application database
 php artisan migrate:rollback --database=informix
-php artisan migrate:reset --database=informix
-php artisan migrate:refresh --database=informix --seed
 
 # Seeding
 php artisan db:seed --database=informix
@@ -238,6 +250,10 @@ php artisan tinker
 ```
 
 ## Verified Working Features (2026-01-26)
+
+Historical application results below are separate from the user-reported
+2026-10-20 five-test integration pass. Do not use destructive migration commands
+against the shared test server as a routine verification step.
 
 ### ✅ Artisan Commands
 - `php artisan db:show --database=informix` - Shows all tables and database info
@@ -284,8 +300,9 @@ php artisan tinker
 - BelongsTo / HasMany relationships
 - insertGetId() with MAX(id) workaround
 
-### ❌ Not Supported
-- `php artisan schema:dump` - Requires getSchemaState() method (low priority)
+### Not covered by the current integration suite
+- `php artisan schema:dump`: custom `getSchemaState()` and `InformixSchemaState`
+  implementations exist, but schema dump/load correctness is not verified by the suite.
 
 ## Common Errors & Solutions
 
@@ -296,7 +313,8 @@ php artisan tinker
 to get consistent formatting for all time-related...
 ```
 
-**Solution:** Ensure DB_LOCALE and CLIENT_LOCALE in config match exactly what the database was created with.
+**Solution:** Query `sysmaster:sysdbslocale` and set the configured DB_LOCALE
+to the stored value. The verified runner used `en_US.819` for both locales.
 
 ### Error -704: Primary Key Already Exists
 
@@ -363,10 +381,10 @@ COMPOSER_ALLOW_SUPERUSER=1 composer update hanamichisakuragiking/laravel-informi
 
 ## Future Improvements
 
-- [ ] Implement getSchemaState() for schema:dump support
+- [ ] Validate the existing schema dump/load implementation end to end
 - [ ] Add support for Informix SEQUENCE instead of SERIAL
 - [ ] Implement proper transaction support with savepoints
 - [ ] Add support for Informix-specific data types (BYTE, CLOB, BLOB)
 - [ ] Implement table size estimation for db:show
-- [ ] Add comprehensive unit tests
+- [ ] Expand unit/integration coverage beyond the existing suites
 - [ ] Support for Informix stored procedures

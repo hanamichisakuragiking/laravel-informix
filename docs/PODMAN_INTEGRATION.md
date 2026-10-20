@@ -1,9 +1,32 @@
 # Podman integration tests on 10.116.165.44
 
 This setup builds a disposable PHP 8.3 / Laravel 13 test runner and connects it
-to your existing Informix container through `10.116.165.44:9088`. It does not
+to your existing Informix container's host-published TCP port `9088`. It does not
 start another Informix server. Run the Linux commands below on that host, as
 the same Linux user that manages the existing Informix container.
+
+## Verified setup and result (2026-10-20)
+
+The user reported a successful image build and all five integration tests
+passing on `workcontroller` (`10.116.165.44`). The agent did not execute the
+remote run or collect a full test log, image digest, or resolved package versions.
+Rerun after code changes; this record does not cover every feature or concurrency.
+
+| Setting | Verified value |
+| --- | --- |
+| Linux login | `jason` |
+| Existing database container | `informix_ids` |
+| Server installation | `/opt/ibm/informix` |
+| Informix server name / database user | `informix` / `informix` |
+| Existing logged test database | `laravel_ifx_test` |
+| Database locale from `sysdbslocale` | `en_US.819` |
+| Runner network | `--network=host` |
+| Runner host / service | `127.0.0.1` / `9088` |
+| DB / client locale in passing run | `en_US.819` / `en_US.819` |
+
+For this existing environment, skip database creation and go straight to
+steps 4 and 5. Rebuild in step 3 if source, tests, or image dependencies changed.
+Preserve the host's existing `.env.integration` when updating source files.
 
 The base is Red Hat's `registry.access.redhat.com/ubi9/php-83:latest`.
 UBI is a Red Hat maintained base, not a certification that this custom image
@@ -14,8 +37,8 @@ If your organization specifies an approved image digest, supply it through
 
 ## 1. Copy the files to the Podman host
 
-The source files added here are local; they have not been pushed to GitHub.
-Transfer them with your usual file transfer tool, or use these commands from
+Ensure the host has the source version you intend to test.
+Transfer it with your usual file transfer tool, or use these commands from
 PowerShell in this repository. Replace `YOUR_SSH_USER` with your Linux login
 (the SSH user is not necessarily the database user `informix`).
 
@@ -48,19 +71,24 @@ Set the actual container name below; `INFORMIXSERVER=informix` is the server
 name inside Informix, which can differ from the Podman container name.
 
 ```bash
-IFX_CONTAINER=YOUR_EXISTING_CONTAINER_NAME
-podman exec "$IFX_CONTAINER" printenv INFORMIXSERVER
+IFX_CONTAINER=informix_ids
+podman port "$IFX_CONTAINER"
 ```
 
-Create only the new test database, explicitly selecting UTF-8 for this database.
-Run this once, not before every test. If `dbaccess` is not on PATH inside the
-container, substitute its full path under the server's `INFORMIXDIR/bin`.
+Only create a database when provisioning a new test environment; the verified
+`laravel_ifx_test` already exists. This command creates a logged database using
+the verified environment's locale. Do not rerun before every test or drop an
+existing database. Server tools need explicit paths/environment because
+`INFORMIXDIR` was absent even when executing as the `informix` user.
 
 ```bash
 podman exec -i --user informix \
+  --env INFORMIXDIR=/opt/ibm/informix \
   --env INFORMIXSERVER=informix \
-  --env DB_LOCALE=en_US.utf8 --env CLIENT_LOCALE=en_US.utf8 \
-  "$IFX_CONTAINER" dbaccess - - <<'SQL'
+  --env INFORMIXSQLHOSTS=/opt/ibm/informix/etc/sqlhosts \
+  --env LD_LIBRARY_PATH=/opt/ibm/informix/lib:/opt/ibm/informix/lib/esql \
+  --env DB_LOCALE=en_US.819 --env CLIENT_LOCALE=en_US.819 \
+  "$IFX_CONTAINER" /opt/ibm/informix/bin/dbaccess - - <<'SQL'
 CREATE DATABASE laravel_ifx_test WITH LOG;
 CLOSE DATABASE;
 SQL
@@ -74,17 +102,20 @@ may leave its test tables behind.
 Query the actual database locale rather than guessing it:
 
 ```bash
-podman exec -i --user informix --env INFORMIXSERVER=informix \
-  "$IFX_CONTAINER" dbaccess sysmaster - <<'SQL'
+podman exec -i --user informix \
+  --env INFORMIXDIR=/opt/ibm/informix \
+  --env INFORMIXSERVER=informix \
+  --env INFORMIXSQLHOSTS=/opt/ibm/informix/etc/sqlhosts \
+  --env LD_LIBRARY_PATH=/opt/ibm/informix/lib:/opt/ibm/informix/lib/esql \
+  "$IFX_CONTAINER" /opt/ibm/informix/bin/dbaccess sysmaster - <<'SQL'
 SELECT dbs_dbsname, dbs_collate FROM sysdbslocale
 WHERE dbs_dbsname = 'laravel_ifx_test';
 SQL
 ```
 
-For the UTF-8 database just created, the server may show the numeric UTF-8
-locale name `en_US.57372`; `en_US.utf8` is its common alias. If the database
-already existed with a different locale (for example `en_US.819`), use its
-actual locale in `INFORMIX_DB_LOCALE`; do not recreate or drop it to fix a mismatch.
+The actual result for this database was `en_US.819`. Use that value in the
+runner settings. A different database may use another locale; query it instead
+of assuming UTF-8. Do not recreate or drop a database to fix a locale mismatch.
 
 ## 3. Build the test runner
 
@@ -106,20 +137,20 @@ The build compiles PECL PDO_INFORMIX 1.3.7 against the supplied CSDK, verifies
 that PHP loads it, resolves Laravel 13 dependencies, and runs the unit tests.
 The final stage leaves the build toolchain behind. It needs network access to
 Red Hat's registry/repositories, PECL, Composer, and Composer package sources.
-The CSDK 4.50.FC8 / UBI 9 combination must still be validated on your host;
-these files have not been built remotely.
+The user reported a successful build with CSDK 4.50.FC8 and this UBI 9 runner.
+Exact resolved package versions and the final image digest were not recorded.
 
 FC8 also requires ncurses ABI 5. A separate Red Hat UBI 8.10 stage installs
 `ncurses-compat-libs` and supplies the genuine `libncurses.so.5` and
 `libtinfo.so.5` libraries under `/opt/ncurses5/lib` in both UBI 9 stages.
 An `ld.so.conf.d` entry registers this location. UBI 9's ABI 6 libraries and
-RPM packages are retained. This is a custom compatibility setup to validate,
+RPM packages are retained. This is a custom compatibility setup,
 not a claim of Red Hat or IBM certification of FC8 on UBI 9.
 
 ## 4. Configure the connection locally on the host
 
 ```bash
-cp containers/integration/integration.env.example .env.integration
+test -f .env.integration || cp containers/integration/integration.env.example .env.integration
 chmod 600 .env.integration
 vi .env.integration
 ```
@@ -128,14 +159,14 @@ The template already contains:
 
 ```dotenv
 INFORMIX_INTEGRATION=1
-INFORMIX_HOST=10.116.165.44
+INFORMIX_HOST=127.0.0.1
 INFORMIX_SERVICE=9088
 INFORMIX_SERVER=informix
 INFORMIX_DATABASE=laravel_ifx_test
 INFORMIX_USERNAME=informix
 INFORMIX_PASSWORD=REPLACE_LOCALLY
-INFORMIX_DB_LOCALE=en_US.utf8
-INFORMIX_CLIENT_LOCALE=en_US.utf8
+INFORMIX_DB_LOCALE=en_US.819
+INFORMIX_CLIENT_LOCALE=en_US.819
 ```
 
 Replace the password locally with your existing password. For Podman
@@ -146,7 +177,10 @@ The env file is ignored by Git and excluded from the image build context.
 
 ```bash
 podman run --rm \
+  --network=host \
   --env-file .env.integration \
+  --env INFORMIX_HOST=127.0.0.1 \
+  --env INFORMIX_SERVICE=9088 \
   --read-only \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
   --cap-drop=all \
@@ -154,8 +188,11 @@ podman run --rm \
   localhost/laravel-informix-integration:13
 ```
 
-No application port needs publishing. The runner makes an outbound connection
-to the existing database. It exits with PHPUnit's status; `--rm` removes the
+This is the command used for the passing run on the same Linux host as Informix.
+Host networking shares the host network namespace, making its published
+`127.0.0.1:9088` reachable. It reduces network isolation; for another topology,
+use a reachable address and the appropriate isolated network instead.
+No runner application port needs publishing. It exits with PHPUnit's status; `--rm` removes the
 runner container after completion. The image and test database remain for reuse.
 
 The suite covers a real Laravel provider connection, schema create/drop and
@@ -201,10 +238,15 @@ podman run --rm --read-only \
 - Connection refused or timeout: check `podman port "$IFX_CONTAINER"`, the
   Informix listener, and host firewall rules for 9088. If the port is published
   only on host loopback, the runner's bridge cannot reach it through the LAN IP.
-  For a diagnostic run on the same Linux host, add `--network=host` and
-  `--env INFORMIX_HOST=127.0.0.1`; this shares host networking and reduces isolation.
+  The verified same-host command above uses `--network=host` and localhost.
+  Error -908 is a general connection failure; if it persists, inspect server
+  status and sqlhosts with explicit server paths/environment as above.
 - Error -23197: the database locale and configured `INFORMIX_DB_LOCALE` differ;
-  query `sysmaster:sysdbslocale` as above.
+  query `sysmaster:sysdbslocale` as above. This environment returned `en_US.819`;
+  configuring both locale values as `en_US.819` resolved the reported error.
+- `/bin/onstat` or `/etc/sqlhosts` not found: `INFORMIXDIR` was empty, so paths
+  expanded incorrectly. Use `/opt/ibm/informix` explicitly for this server.
+  That path differs from the runner's `/opt/informix` SDK installation.
 - Error -329: the test database was not created or the name is wrong.
 - Transactions unsupported: verify the database was created `WITH LOG`.
 - Shared library load failure: run the image with `--entrypoint php` and

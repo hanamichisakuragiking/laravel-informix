@@ -312,6 +312,11 @@ and connection settings for a test database.
 For a Red Hat UBI/PHP 8.3 Podman runner against an existing Informix server,
 see [the integration container guide](docs/PODMAN_INTEGRATION.md).
 
+The user reported all five Laravel 13 integration tests passing on 2026-10-20.
+The working same-host Podman setup uses host networking and the test database's
+actual locale, `en_US.819`; see the guide for the exact settings and commands.
+For AI-assisted changes, start with [AGENTS.md](AGENTS.md).
+
 GitHub Actions tests the package against Laravel 11, 12, and 13. Laravel 13
 jobs use PHP 8.3 because that is Laravel 13's minimum PHP version.
 
