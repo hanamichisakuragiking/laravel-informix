@@ -169,6 +169,18 @@ podman run --rm --read-only \
 
 ## Troubleshooting
 
+- CSDK build step exits with status 45: this final status alone does not identify
+  the missing prerequisite or installer failure. The revised installer step
+  prints launcher output, installer/debug log tails, and the library inventory
+  before returning the original exit status. Copy both the updated Containerfile
+  and `containers/integration/install-csdk.sh` to the host, rebuild, and inspect
+  the output immediately above the Podman error. Save the build output with
+  `set -o pipefail` followed by `podman build ... 2>&1 | tee csdk-build.log`.
+  The image includes `file` for installer architecture/library detection plus
+  explicit native-library dependencies. If the log specifically requires
+  `libncurses.so.5`, `ncurses-libs` supplies ABI 6 and is not an ABI 5 replacement;
+  use a supported compatibility package from approved repositories or a compatible
+  CSDK version. Do not symlink ABI 6 to ABI 5 or suppress prerequisite checks.
 - Connection refused or timeout: check `podman port "$IFX_CONTAINER"`, the
   Informix listener, and host firewall rules for 9088. If the port is published
   only on host loopback, the runner's bridge cannot reach it through the LAN IP.

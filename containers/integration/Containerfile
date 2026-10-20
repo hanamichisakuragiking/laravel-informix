@@ -4,7 +4,8 @@ USER 0
 
 RUN dnf -y update && \
     dnf -y install php-devel gcc gcc-c++ make autoconf libtool \
-        libaio libnsl bc fontconfig dejavu-sans-fonts tar gzip unzip && \
+        libaio libnsl bc fontconfig dejavu-sans-fonts tar gzip unzip \
+        file elfutils-libelf pam libxcrypt libstdc++ libgcc ncurses-libs && \
     dnf clean all
 
 ENV INFORMIXDIR=/opt/informix \
@@ -13,17 +14,9 @@ ENV INFORMIXDIR=/opt/informix \
 # The licensed IBM archive is supplied separately, outside the build context.
 # Explicit acceptance is required from the person building the image.
 ARG ACCEPT_CSDK_LICENSE=false
+COPY containers/integration/install-csdk.sh /usr/local/libexec/install-csdk.sh
 RUN --mount=type=secret,id=csdk \
-    test "$ACCEPT_CSDK_LICENSE" = true && \
-    test "$(uname -m)" = x86_64 && \
-    mkdir -p /tmp/csdk && \
-    tar -xf /run/secrets/csdk -C /tmp/csdk && \
-    cd /tmp/csdk && \
-    ./installclientsdk -i silent -DLICENSE_ACCEPTED=TRUE \
-        -DUSER_INSTALL_DIR=/opt/informix && \
-    test -f /opt/informix/incl/cli/infxcli.h && \
-    test -d /opt/informix/lib/cli && \
-    rm -rf /tmp/csdk
+    bash /usr/local/libexec/install-csdk.sh
 
 ARG PDO_INFORMIX_VERSION=1.3.7
 RUN curl --fail --location --retry 3 \
@@ -59,7 +52,9 @@ RUN php -r '$p=json_decode(file_get_contents("composer.json"), true, 512, JSON_T
 
 FROM ${BASE_IMAGE} AS runner
 USER 0
-RUN dnf -y update && dnf -y install libaio libnsl && dnf clean all
+RUN dnf -y update && \
+    dnf -y install libaio libnsl elfutils-libelf pam libxcrypt libstdc++ libgcc ncurses-libs && \
+    dnf clean all
 
 ENV INFORMIXDIR=/opt/informix \
     LD_LIBRARY_PATH=/opt/informix/lib:/opt/informix/lib/cli:/opt/informix/lib/esql \
